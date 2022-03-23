@@ -356,6 +356,8 @@ private:
     // detector arrays that need to be calibrated, initialized when configuration is finalized
     vector<Array> _sed;
     vector<Array> _ifu;
+    vector<Array> _lc;
+
 
     // detector arrays for statistics that should not be calibrated, initialized when configuration is finalized
     vector<Array> _wsed;

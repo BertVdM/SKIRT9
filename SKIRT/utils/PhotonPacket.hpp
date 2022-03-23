@@ -164,6 +164,9 @@ public:
         the model coordinate system. */
     double wavelength() const { return _lambda; }
 
+    /** This function returns the current distance of the photon packet travelled since emission. */
+    double distance() const { return _D; }
+
     /** This function returns the luminosity \f$L\f$ represented by the photon packet, calculated
         from its current wavelength and weight. */
     double luminosity() const { return _W / _lambda; }
@@ -312,6 +315,7 @@ private:
     // current physical properties (in addition to inherited data members)
     double _lambda{0};  // current wavelength relative to the model coordinate system
     double _W{0};       // current weight, defined as L*lambda to avoid division and multiplication by hc
+    double _D{0};        // current distance traveleld from the source
 
     // physical information on radiation source; the interfaces are not used in peel-off photon packets
     double _lambda0{0};  // original wavelength in the rest-frame of the source

@@ -18,6 +18,7 @@ PhotonPacket::PhotonPacket() {}
 void PhotonPacket::launch(size_t historyIndex, double lambda, double L, Position bfr, Direction bfk,
                           VelocityInterface* bvi, AngularDistributionInterface* adi, PolarizationProfileInterface* ppi)
 {
+    _D = 0;
     _lambda = lambda;
     _W = L * lambda;
     _lambda0 = lambda;
@@ -56,6 +57,7 @@ void PhotonPacket::setSecondaryOrigin(int mediumCompIndex)
 
 void PhotonPacket::launchEmissionPeelOff(const PhotonPacket* pp, Direction bfk)
 {
+    _D = 0;
     _lambda = pp->_lambda;
     _W = pp->_W;
     _lambda0 = pp->_lambda0;
@@ -72,12 +74,14 @@ void PhotonPacket::launchEmissionPeelOff(const PhotonPacket* pp, Direction bfk)
         setUnpolarized();
     _hasObservedOpticalDepth = false;
     _scatteringInfo.clear();
+    _D -= Vec::dot(position(), direction());
 }
 
 ////////////////////////////////////////////////////////////////////
 
 void PhotonPacket::launchScatteringPeelOff(const PhotonPacket* pp, Direction bfk, Vec bfv, double lambda, double w)
 {
+    _D = pp->_D;
     _lambda = bfv.isNull() ? lambda : shiftedEmissionWavelength(lambda, bfk, bfv);
     _W = pp->_W * w;
     _lambda0 = pp->_lambda0;
@@ -89,6 +93,7 @@ void PhotonPacket::launchScatteringPeelOff(const PhotonPacket* pp, Direction bfk
     setUnpolarized();
     _hasObservedOpticalDepth = false;
     _scatteringInfo.clear();
+    _D -= Vec::dot(position(), direction());
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -96,6 +101,7 @@ void PhotonPacket::launchScatteringPeelOff(const PhotonPacket* pp, Direction bfk
 void PhotonPacket::propagate(double s)
 {
     propagatePosition(s);
+    _D += s;
 }
 
 ////////////////////////////////////////////////////////////////////

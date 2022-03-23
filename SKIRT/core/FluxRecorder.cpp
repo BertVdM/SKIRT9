@@ -41,6 +41,10 @@ namespace
     //  - thus, the number of detector arrays for statistics is this number plus one
     //  - these detector arrays do not need calibration!
     const int maxContributionPower = 4;
+
+    //Number of distance bins and the distance range are hard coded
+    int numberofdistancebins = 1000;
+    int distancerange = 20;
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -144,28 +148,34 @@ void FluxRecorder::finalizeConfiguration()
     // allocate the appropriate number of flux detector arrays
     _sed.resize(PrimaryScatteredLevel + _numScatteringLevels);
     _ifu.resize(PrimaryScatteredLevel + _numScatteringLevels);
+    _lc.resize(PrimaryScatteredLevel + _numScatteringLevels); //LC for each scattering level
 
     // resize the flux detector arrays according to the configuration
     if (_recordTotalOnly)
     {
         _sed[Total].resize(lenSED);
         _ifu[Total].resize(lenIFU);
+        _lc[Total].resize(numberofdistancebins); //bins for the light curve
     }
     else
     {
         _sed[Transparent].resize(lenSED);
         _ifu[Transparent].resize(lenIFU);
+        _lc[Transparent].resize(numberofdistancebins); //bins for the light curve
         _sed[PrimaryDirect].resize(lenSED);
         _ifu[PrimaryDirect].resize(lenIFU);
+        _lc[PrimaryDirect].resize(numberofdistancebins); //bins for the light curve
         _sed[PrimaryScattered].resize(lenSED);
         _ifu[PrimaryScattered].resize(lenIFU);
+        _lc[PrimaryScattered].resize(numberofdistancebins); //bins for the light curve
 
         for (int i = 0; i != _numScatteringLevels; ++i)
         {
             _sed[PrimaryScatteredLevel + i].resize(lenSED);
             _ifu[PrimaryScatteredLevel + i].resize(lenIFU);
+            _lc[PrimaryScatteredLevel + i].resize(numberofdistancebins); //bins for the light curve
         }
-        if (_hasMediumEmission)
+        if (_hasMediumEmission) //no
         {
             _sed[SecondaryTransparent].resize(lenSED);
             _ifu[SecondaryTransparent].resize(lenIFU);
@@ -175,7 +185,7 @@ void FluxRecorder::finalizeConfiguration()
             _ifu[SecondaryScattered].resize(lenIFU);
         }
     }
-    if (_recordPolarization)
+    if (_recordPolarization) //no
     {
         _sed[TotalQ].resize(lenSED);
         _ifu[TotalQ].resize(lenIFU);
@@ -186,7 +196,7 @@ void FluxRecorder::finalizeConfiguration()
     }
 
     // allocate and resize the statistics detector arrays
-    if (_recordStatistics)
+    if (_recordStatistics) //no
     {
         _wsed.resize(maxContributionPower + 1);
         _wifu.resize(maxContributionPower + 1);
@@ -198,6 +208,7 @@ void FluxRecorder::finalizeConfiguration()
     size_t allocatedSize = 0;
     for (const auto& array : _sed) allocatedSize += array.size();
     for (const auto& array : _ifu) allocatedSize += array.size();
+    for (const auto& array : _lc) allocatedSize += array.size();   //just copy the _sed implementation
     for (const auto& array : _wsed) allocatedSize += array.size();
     for (const auto& array : _wifu) allocatedSize += array.size();
     _parentItem->find<Log>()->info(_parentItem->typeAndName() + " allocated "
@@ -217,6 +228,13 @@ void FluxRecorder::detect(PhotonPacket* pp, int l, double distance)
     // get the wavelength bin indices that overlap the photon packet wavelength and perform recording for each
     for (int ell : _lambdagrid->bins(wavelength))
     {
+        //Get _lc index: numberofdistancebins bins, array size distancerange
+        int lcbin = floor(numberofdistancebins*pp->distance()/distancerange);
+        if (lcbin > numberofdistancebins-1)
+        {
+            lcbin =numberofdistancebins-1; //store all overflow in last bin
+        }
+
         // get the luminosity contribution from the photon packet,
         // taking into account the transmission for the detector bin at this wavelength
         double L = pp->luminosity() * _lambdagrid->transmission(ell, wavelength);
@@ -256,6 +274,7 @@ void FluxRecorder::detect(PhotonPacket* pp, int l, double distance)
             if (_recordTotalOnly)
             {
                 LockFree::add(_sed[Total][ell], Lext);
+                LockFree::add(_lc[Total][lcbin], Lext);
             }
             else
             {
@@ -265,12 +284,19 @@ void FluxRecorder::detect(PhotonPacket* pp, int l, double distance)
                     {
                         LockFree::add(_sed[Transparent][ell], L);
                         LockFree::add(_sed[PrimaryDirect][ell], Lext);
+                        LockFree::add(_lc[Transparent][lcbin], L);
+                        LockFree::add(_lc[PrimaryDirect][lcbin], Lext);
+
                     }
                     else
                     {
                         LockFree::add(_sed[PrimaryScattered][ell], Lext);
+                        LockFree::add(_lc[PrimaryScattered][lcbin], Lext);
                         if (numScatt <= _numScatteringLevels)
+                        {
                             LockFree::add(_sed[PrimaryScatteredLevel + numScatt - 1][ell], Lext);
+                            LockFree::add(_lc[PrimaryScatteredLevel + numScatt - 1][lcbin], Lext);
+                        }
                     }
                 }
                 else
@@ -279,14 +305,17 @@ void FluxRecorder::detect(PhotonPacket* pp, int l, double distance)
                     {
                         LockFree::add(_sed[SecondaryTransparent][ell], L);
                         LockFree::add(_sed[SecondaryDirect][ell], Lext);
+                        LockFree::add(_lc[SecondaryTransparent][lcbin], L);
+                        LockFree::add(_lc[SecondaryDirect][lcbin], Lext);
                     }
                     else
                     {
                         LockFree::add(_sed[SecondaryScattered][ell], Lext);
+                        LockFree::add(_lc[SecondaryScattered][lcbin], Lext);
                     }
                 }
             }
-            if (_recordPolarization)
+            if (_recordPolarization) //no
             {
                 LockFree::add(_sed[TotalQ][ell], Lext * pp->stokesQ());
                 LockFree::add(_sed[TotalU][ell], Lext * pp->stokesU());
@@ -294,7 +323,7 @@ void FluxRecorder::detect(PhotonPacket* pp, int l, double distance)
             }
         }
 
-        // record in IFU arrays
+        // record in IFU arrays //no
         if (_includeSurfaceBrightness && l >= 0)
         {
             size_t lell = l + ell * _numPixelsInFrame;
@@ -341,7 +370,7 @@ void FluxRecorder::detect(PhotonPacket* pp, int l, double distance)
         }
 
         // record statistics for both SEDs and IFUs
-        if (_recordStatistics)
+        if (_recordStatistics) //no
         {
             ContributionList* contributionList = _contributionLists.local();
             if (!contributionList->hasHistoryIndex(pp->historyIndex()))
@@ -372,6 +401,7 @@ void FluxRecorder::calibrateAndWrite()
 {
     // collect recorded data from all processes
     for (auto& array : _sed) ProcessManager::sumToRoot(array);
+    for (auto& array : _lc) ProcessManager::sumToRoot(array);
     for (auto& array : _ifu) ProcessManager::sumToRoot(array);
     for (auto& array : _wsed) ProcessManager::sumToRoot(array);
     for (auto& array : _wifu) ProcessManager::sumToRoot(array);
@@ -392,7 +422,7 @@ void FluxRecorder::calibrateAndWrite()
     int numWavelengths = _lambdagrid->numBins();
     for (int ell = 0; ell != numWavelengths; ++ell)
     {
-        // SEDs
+        // SEDs //skip over the callibration
         if (_includeFluxDensity)
         {
             double factor = 1. / fourpid2 / _lambdagrid->effectiveWidth(ell)
@@ -413,23 +443,33 @@ void FluxRecorder::calibrateAndWrite()
         }
     }
 
-    // write SEDs to a single text file (with multiple columns)
+    // write SEDs to a single text file (with multiple columns): add the lc functionality
     if (_includeFluxDensity)
     {
         // Build a list of column names and corresponding pointers to sed arrays (which may be empty)
         vector<string> sedNames;
         vector<Array*> sedArrays;
+        vector<string> lcNames;
+        vector<Array*> lcArrays;
 
         // add the total flux; if we didn't record it directly, calculate it now
         sedNames.push_back("total flux");
+        lcNames.push_back("total flux");
         Array sedTotal;
+        Array lcTotal;
         if (_recordTotalOnly)
+        {
             sedArrays.push_back(&_sed[Total]);
+            lcArrays.push_back(&_lc[Total]);
+        }
         else
         {
             sedTotal = _sed[PrimaryDirect] + _sed[PrimaryScattered];
+            lcTotal = _lc[PrimaryDirect] + _lc[PrimaryScattered];
             if (_hasMediumEmission) sedTotal += _sed[SecondaryDirect] + _sed[SecondaryScattered];
+            if (_hasMediumEmission) lcTotal += _lc[SecondaryDirect] + _lc[SecondaryScattered];
             sedArrays.push_back(&sedTotal);
+            lcArrays.push_back(&lcTotal);
         }
 
         // add the flux components, if requested
@@ -439,17 +479,23 @@ void FluxRecorder::calibrateAndWrite()
             // add transparent flux
             // if we did not actually record components (because there are no media), use the total flux instead
             sedNames.push_back("transparent flux");
+            lcNames.push_back("transparent flux");
             sedArrays.push_back(_recordTotalOnly ? &_sed[Total] : &_sed[Transparent]);
+            lcArrays.push_back(_recordTotalOnly ? &_lc[Total] : &_lc[Transparent]);
 
             // add the actual components of the total flux
             sedNames.insert(sedNames.end(), {"direct primary flux", "scattered primary flux", "direct secondary flux",
                                              "scattered secondary flux", "transparent secondary flux"});
+            lcNames.insert(lcNames.end(), {"direct primary flux", "scattered primary flux", "direct secondary flux",
+                                             "scattered secondary flux", "transparent secondary flux"});
             sedArrays.insert(sedArrays.end(), {&_sed[PrimaryDirect], &_sed[PrimaryScattered], &_sed[SecondaryDirect],
                                                &_sed[SecondaryScattered], &_sed[SecondaryTransparent]});
+            lcArrays.insert(lcArrays.end(), {&_lc[PrimaryDirect], &_lc[PrimaryScattered], &_lc[SecondaryDirect],
+                                               &_lc[SecondaryScattered], &_lc[SecondaryTransparent]});
         }
 
         // add the polarization components, if requested
-        if (_recordPolarization)
+        if (_recordPolarization) //no
         {
             sedNames.insert(sedNames.end(), {"total Stokes Q", "total Stokes U", "total Stokes V"});
             sedArrays.insert(sedArrays.end(), {&_sed[TotalQ], &_sed[TotalU], &_sed[TotalV]});
@@ -457,19 +503,28 @@ void FluxRecorder::calibrateAndWrite()
 
         // add the scattering levels, if requested, even if they are all zero
         Array empty;
+        Array emptylc;
         if (_recordComponents)
             for (int i = 0; i != _numScatteringLevels; ++i)
             {
                 sedNames.push_back(std::to_string(i + 1) + "-times scattered primary flux");
+                lcNames.push_back(std::to_string(i + 1) + "-times scattered primary flux");
                 sedArrays.push_back(_recordTotalOnly ? &empty : &_sed[PrimaryScatteredLevel + i]);
+                lcArrays.push_back(_recordTotalOnly ? &emptylc : &_lc[PrimaryScatteredLevel + i]);
             }
 
         // open the file and add the column headers
         TextOutFile sedFile(_parentItem, _instrumentName + "_sed", "SED");
+        TextOutFile lcFile(_parentItem, _instrumentName + "_lc", "LC");
         sedFile.addColumn("wavelength; " + units->swavelength(), units->uwavelength());
+        lcFile.addColumn("photon travel distance in m");
         for (const string& name : sedNames)
         {
             sedFile.addColumn(name + "; " + units->sfluxdensity(), units->ufluxdensity());
+        }
+        for (const string& name : lcNames)
+        {
+            lcFile.addColumn(name + "; " + units->sfluxdensity(), units->ufluxdensity());
         }
 
         // write the column data
@@ -479,9 +534,17 @@ void FluxRecorder::calibrateAndWrite()
             for (const Array* array : sedArrays) values.push_back(array->size() ? (*array)[ell] : 0.);
             sedFile.writeRow(values);
         }
+        // write the column data
+        for (int lcbin=0; lcbin<numberofdistancebins; ++lcbin)
+        {
+            vector<double> values({double(double(distancerange)*double(lcbin)/double(numberofdistancebins))});
+            for (const Array* array : lcArrays) values.push_back(array->size() ? (*array)[lcbin] : 0.);
+            lcFile.writeRow(values);
+        }
         sedFile.close();
+        lcFile.close();
 
-        // output statistics to a seperate file
+        // output statistics to a seperate file //no
         if (_recordStatistics)
         {
             // open the file and add the column headers
@@ -504,7 +567,7 @@ void FluxRecorder::calibrateAndWrite()
         }
     }
 
-    // write IFUs to FITS files (one file per IFU)
+    // write IFUs to FITS files (one file per IFU) //no
     if (_includeSurfaceBrightness)
     {
         // Build a list of file names and corresponding pointers to ifu arrays (which may be empty)
