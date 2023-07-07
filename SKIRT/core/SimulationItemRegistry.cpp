@@ -57,6 +57,7 @@
 #include "DensityProbe.hpp"
 #include "DensityTreePolicy.hpp"
 #include "DiscreteWavelengthDistribution.hpp"
+#include "DiskWindVectorField.hpp"
 #include "DonutGeometry.hpp"
 #include "DorschnerOlivineGrainComposition.hpp"
 #include "DraineGraphiteGrainComposition.hpp"
@@ -459,6 +460,7 @@ SimulationItemRegistry::SimulationItemRegistry(string version, string format)
     ItemRegistry::add<VectorField>();
     ItemRegistry::add<RadialVectorField>();
     ItemRegistry::add<HollowRadialVectorField>();
+    ItemRegistry::add<DiskWindVectorField>();
     ItemRegistry::add<CylindricalVectorField>();
     ItemRegistry::add<UnidirectionalVectorField>();
     ItemRegistry::add<OffsetVectorFieldDecorator>();
