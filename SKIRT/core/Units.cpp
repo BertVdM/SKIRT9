@@ -687,6 +687,41 @@ double Units::otimefluxdensity(double Ftime, double lambdaFtime) const
 
 ////////////////////////////////////////////////////////////////////
 
+string Units::stimesurfacebrightness() const
+{
+    return "f_t";
+}
+
+////////////////////////////////////////////////////////////////////
+
+string Units::utimesurfacebrightness() const
+{
+    switch (_fluxOutputStyle)
+    {
+        case FluxOutputStyle::Neutral: return unit("neutraltimesurfacebrightness");
+        case FluxOutputStyle::Wavelength: return unit("wavelengthtimesurfacebrightness");
+        case FluxOutputStyle::Frequency: return unit("frequencytimesurfacebrightness");
+        case FluxOutputStyle::Energy: return unit("energytimesurfacebrightness");
+    }
+    return string();
+}
+
+////////////////////////////////////////////////////////////////////
+
+double Units::otimesurfacebrightness(double ftime, double lambdaftime) const
+{
+    switch (_fluxOutputStyle)
+    {
+        case FluxOutputStyle::Neutral: return out("neutraltimesurfacebrightness", ftime);
+        case FluxOutputStyle::Wavelength: return out("wavelengthtimesurfacebrightness", ftime);
+        case FluxOutputStyle::Frequency: return out("frequencytimesurfacebrightness", ftime);
+        case FluxOutputStyle::Energy: return out("energytimesurfacebrightness", lambdaftime / hc);
+    }
+    return 0.;
+}
+
+////////////////////////////////////////////////////////////////////
+
 string Units::sspectraltimefluxdensity() const
 {
     switch (_fluxOutputStyle)

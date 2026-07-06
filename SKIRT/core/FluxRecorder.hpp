@@ -36,7 +36,11 @@ class WavelengthGrid;
     the source luminosity as a function of arrival time,
 
     - a spectral-time map (STM), the spatially integrated timelag response to a pulse in the source
-    luminosity as a function of both wavelength and arrival time.
+    luminosity as a function of both wavelength and arrival time,
+
+    - a time frame map (TFM), a surface brightness image frame for each arrival time interval instead
+    of for each wavelength interval, i.e. an IFU-like data cube that is spectrally integrated but
+    resolved in both space and arrival time.
 
     For all of these output types, the class can record the individual contributions from primary
     and secondary sources, in each case splitting direct and scattered radiation. It can also store
@@ -247,6 +251,15 @@ public:
         time grid to be configured. */
     void includeSpectralTimeMap();
 
+    /** This function enables recording of IFU-like data cubes for a distant instrument, i.e. a
+        surface brightness image frame for each time lag interval instead of for each wavelength
+        interval. The number of pixels and the pixel sizes are used to calibrate the surface
+        brightness; the center coordinates are used only for the metadata in the output file. This
+        requires a time grid to be configured. This function should not be called for a local
+        instrument. */
+    void includeTimeFrame(int numPixelsX, int numPixelsY, double pixelSizeX, double pixelSizeY, double centerX,
+                          double centerY);
+
     /** This function enables recording of IFU data cubes, i.e. a surface brightness image frame
         for each wavelength, for a local instrument. The solid ange per pixel is used to calibrate
         the surface brightness. The remaining arguments are used only for the metadata in the
@@ -362,6 +375,7 @@ private:
     bool _includeSurfaceBrightness{false};
     bool _includeLightCurve{false};
     bool _includeSpectralTimeMap{false};
+    bool _includeTimeFrame{false};
 
     // recorder configuration on observer angles, received from client during configuration
     double _inclination{0};
@@ -398,6 +412,8 @@ private:
     vector<Array> _lc;
     vector<Array> _lcw;
     vector<Array> _stm;
+    vector<Array> _tfm;
+    vector<Array> _tfmw;
 
     // detector arrays for statistics that should not be calibrated, initialized when configuration is finalized
     vector<Array> _wsed;

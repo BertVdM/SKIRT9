@@ -394,6 +394,23 @@ public:
     double otimefluxdensity(double Ftime, double lambdaFtime) const;
 
     /** This function returns a string describing the output style adopted by the program for a
+        surface brightness per timelag interval (the quantity used by a time frame map). */
+    string stimesurfacebrightness() const;
+
+    /** This function returns a string containing the name of the output unit adopted by the
+        program for a surface brightness per timelag interval. */
+    string utimesurfacebrightness() const;
+
+    /** This function converts a surface brightness per timelag interval given in internal units to
+        the program's adopted output style and units. As for otimefluxdensity(), because the
+        quantity is spectrally integrated, the caller must provide both the surface brightness
+        \f$f_\text{time}\f$ in regular internal SI units \f${\text{W}}\, {\text{m}}^{-2}\,
+        {\text{sr}}^{-1}\, {\text{s}}^{-1}\f$ and the same quantity multiplied by wavelength for
+        every photon packet contribution separately, resulting in internal SI units
+        \f${\text{W}}\, {\text{m}}^{-1}\, {\text{sr}}^{-1}\, {\text{s}}^{-1}\f$. */
+    double otimesurfacebrightness(double ftime, double lambdaftime) const;
+
+    /** This function returns a string describing the output style adopted by the program for a
         spectral flux density per timelag interval (the quantity used by a spectral-time map). */
     string sspectraltimefluxdensity() const;
 

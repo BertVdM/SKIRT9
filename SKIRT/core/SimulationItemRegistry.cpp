@@ -277,6 +277,7 @@
 #include "TemperatureWavelengthCellLibrary.hpp"
 #include "TetraMeshSpatialGrid.hpp"
 #include "ThemisDustMix.hpp"
+#include "TimeFrameInstrument.hpp"
 #include "ToddlersSED.hpp"
 #include "ToddlersSEDFamily.hpp"
 #include "TorusGeometry.hpp"
@@ -704,6 +705,7 @@ SimulationItemRegistry::SimulationItemRegistry(string version, string format)
     ItemRegistry::add<PerspectiveInstrument>();
     ItemRegistry::add<TimeInstrument>();
     ItemRegistry::add<LightCurveInstrument>();
+    ItemRegistry::add<TimeFrameInstrument>();
     ItemRegistry::add<SpectralTimeMapInstrument>();
 
     // all-sky projections

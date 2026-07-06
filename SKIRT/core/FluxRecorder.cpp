@@ -182,6 +182,20 @@ void FluxRecorder::includeSpectralTimeMap()
 
 ////////////////////////////////////////////////////////////////////
 
+void FluxRecorder::includeTimeFrame(int numPixelsX, int numPixelsY, double pixelSizeX, double pixelSizeY,
+                                    double centerX, double centerY)
+{
+    _includeTimeFrame = true;
+    _numPixelsX = numPixelsX;
+    _numPixelsY = numPixelsY;
+    _pixelSizeX = pixelSizeX;
+    _pixelSizeY = pixelSizeY;
+    _centerX = centerX;
+    _centerY = centerY;
+}
+
+////////////////////////////////////////////////////////////////////
+
 void FluxRecorder::finalizeConfiguration()
 {
     // get a pointer to the medium system, if present
@@ -194,6 +208,7 @@ void FluxRecorder::finalizeConfiguration()
     size_t lenIFU = _includeSurfaceBrightness ? _numPixelsInFrame * _numWavelengths : 0;
     size_t lenLC = _includeLightCurve ? _timegrid->numBins() : 0;
     size_t lenSTM = _includeSpectralTimeMap ? _numWavelengths * _timegrid->numBins() : 0;
+    size_t lenTFM = _includeTimeFrame ? _numPixelsInFrame * _timegrid->numBins() : 0;
 
     // do not try to record components if there is no medium
     _recordTotalOnly = !_recordComponents || !_hasMedium;
@@ -204,6 +219,8 @@ void FluxRecorder::finalizeConfiguration()
     _lc.resize(PrimaryScatteredLevel + _numScatteringLevels);
     _lcw.resize(PrimaryScatteredLevel + _numScatteringLevels);
     _stm.resize(PrimaryScatteredLevel + _numScatteringLevels);
+    _tfm.resize(PrimaryScatteredLevel + _numScatteringLevels);
+    _tfmw.resize(PrimaryScatteredLevel + _numScatteringLevels);
 
     // local function to resize flux detector arrays according to the configuration
     // params: vector of flux arrays; desired length of each array; include individual contributions for polarization
@@ -276,6 +293,8 @@ void FluxRecorder::finalizeConfiguration()
     resize(_lc, lenLC, true);
     resize(_lcw, lenLC, true);
     resize(_stm, lenSTM, false);
+    resize(_tfm, lenTFM, false);
+    resize(_tfmw, lenTFM, false);
 
     // allocate and resize the statistics detector arrays
     if (_recordStatistics)
@@ -293,6 +312,8 @@ void FluxRecorder::finalizeConfiguration()
     for (const auto& array : _lc) allocatedSize += array.size();
     for (const auto& array : _lcw) allocatedSize += array.size();
     for (const auto& array : _stm) allocatedSize += array.size();
+    for (const auto& array : _tfm) allocatedSize += array.size();
+    for (const auto& array : _tfmw) allocatedSize += array.size();
     for (const auto& array : _wsed) allocatedSize += array.size();
     for (const auto& array : _wifu) allocatedSize += array.size();
     _parentItem->find<Log>()->info(_parentItem->typeAndName() + " allocated "
@@ -433,7 +454,7 @@ void FluxRecorder::detect(PhotonPacket* pp, int l, double distance)
         if (_includeSurfaceBrightness && l >= 0) record(_ifu, l + ell * _numPixelsInFrame, L, Lext, false);
 
         // if this is a time instrument
-        if (_includeLightCurve || _includeSpectralTimeMap)
+        if (_includeLightCurve || _includeSpectralTimeMap || _includeTimeFrame)
         {
             // get the time grid bin index corresponding to the distance travelled by the photon packet
             int k = _timegrid->binForDistance(pp->distance());
@@ -450,6 +471,16 @@ void FluxRecorder::detect(PhotonPacket* pp, int l, double distance)
 
                 // record in STM arrays
                 if (_includeSpectralTimeMap) record(_stm, ell + k * _numWavelengths, L, Lext, false);
+
+                // record in TFM arrays
+                if (_includeTimeFrame && l >= 0)
+                {
+                    // record both the plain contribution and the contribution multiplied by the wavelength,
+                    // as for the LC, to allow converting between an amount of energy and a number of photons
+                    size_t lk = l + k * _numPixelsInFrame;
+                    record(_tfm, lk, L, Lext, false);
+                    record(_tfmw, lk, L * wavelength, Lext * wavelength, false);
+                }
             }
         }
 
@@ -489,6 +520,8 @@ void FluxRecorder::calibrateAndWrite()
     for (auto& array : _lc) ProcessManager::sumToRoot(array);
     for (auto& array : _lcw) ProcessManager::sumToRoot(array);
     for (auto& array : _stm) ProcessManager::sumToRoot(array);
+    for (auto& array : _tfm) ProcessManager::sumToRoot(array);
+    for (auto& array : _tfmw) ProcessManager::sumToRoot(array);
     for (auto& array : _wsed) ProcessManager::sumToRoot(array);
     for (auto& array : _wifu) ProcessManager::sumToRoot(array);
 
@@ -841,6 +874,60 @@ void FluxRecorder::calibrateAndWrite()
                 FITSInOut::write(_parentItem, description, filename, _wifu[k], "", _numPixelsX, _numPixelsY, incx, incy,
                                  cx, cy, unitsxy, wavegrid, units->uwavelength());
                 cn *= c;
+            }
+        }
+    }
+
+    // ---------------------- TFM: time frame ----------------------
+
+    // write TFMs to FITS files (one file per TFM), just like the IFU section above but sliced
+    // along the time axis instead of the wavelength axis, and spectrally integrated as for the LC
+    if (_includeTimeFrame)
+    {
+        int numTimes = _timegrid->numBins();
+        int numArrays = _tfm.size();
+
+        // convert from recorded quantities to output quantities and from internal units to user-selected
+        // output units (for performance reasons, determine the scaling factor only once per time bin)
+        for (int k = 0; k != numTimes; ++k)
+        {
+            double factor = 1. / fourpid2 / omega / _timegrid->width(k);
+            size_t begin = k * _numPixelsInFrame;
+            size_t end = begin + _numPixelsInFrame;
+            for (int i = 0; i != numArrays; ++i)
+                if (_tfm[i].size())
+                    for (size_t lk = begin; lk != end; ++lk)
+                        _tfm[i][lk] = factor * units->otimesurfacebrightness(_tfm[i][lk], _tfmw[i][lk]);
+        }
+
+        // copy the time grid in output units
+        Array timegrid(numTimes);
+        for (int k = 0; k != numTimes; ++k) timegrid[k] = units->otimelag(_timegrid->time(k));
+
+        // build a list of file names and corresponding pointers to tfm arrays (which may be empty)
+        vector<string> tfmNames;
+        vector<Array*> tfmArrays;
+        buildFiles(_tfm, tfmNames, tfmArrays);
+
+        // determine spatial axes values and units (TFM is supported for distant instruments only)
+        double incx = units->oangle(2. * atan(0.5 * _pixelSizeX / _angularDiameterDistance));
+        double incy = units->oangle(2. * atan(0.5 * _pixelSizeY / _angularDiameterDistance));
+        double cx = units->oangle(2. * atan(0.5 * _centerX / _angularDiameterDistance));
+        double cy = units->oangle(2. * atan(0.5 * _centerY / _angularDiameterDistance));
+        string unitsxy = units->uangle();
+
+        // output the files (ignoring empty arrays)
+        auto info = observerInfo();
+        int numFiles = tfmNames.size();
+        for (int q = 0; q != numFiles; ++q)
+        {
+            if (tfmArrays[q]->size())
+            {
+                string filename = _instrumentName + "_tfm_" + tfmNames[q];
+                string description = tfmNames[q] + " flux";
+                FITSInOut::write(_parentItem, description, filename, *(tfmArrays[q]), units->utimesurfacebrightness(),
+                                 _numPixelsX, _numPixelsY, incx, incy, cx, cy, unitsxy, timegrid, units->utimelag(),
+                                 info.get());
             }
         }
     }
